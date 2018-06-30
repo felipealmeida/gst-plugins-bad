@@ -447,6 +447,7 @@ AG_GST_CHECK_PLUGIN(bayer)
 AG_GST_CHECK_PLUGIN(camerabin2)
 AG_GST_CHECK_PLUGIN(coloreffects)
 AG_GST_CHECK_PLUGIN(debugutils)
+AG_GST_CHECK_PLUGIN(dmss)
 AG_GST_CHECK_PLUGIN(dvbsuboverlay)
 AG_GST_CHECK_PLUGIN(dvdspu)
 AG_GST_CHECK_PLUGIN(faceoverlay)
@@ -2509,6 +2510,7 @@ gst/bayer/Makefile
 gst/camerabin2/Makefile
 gst/coloreffects/Makefile
 gst/debugutils/Makefile
+gst/dmss/Makefile
 gst/dvbsuboverlay/Makefile
 gst/dvdspu/Makefile
 gst/faceoverlay/Makefile
