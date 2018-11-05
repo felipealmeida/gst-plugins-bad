@@ -202,6 +202,9 @@ gst_dmss_src_init (GstDmssSrc * src)
   src->cancellable = g_cancellable_new ();
   src->channel = 0;
   src->subchannel = 0;
+#if 1
+  src->bytes_downloaded = 0;
+#endif
 
   src->system_clock = gst_system_clock_obtain ();
   src->last_ack_time = GST_CLOCK_TIME_NONE;
@@ -348,6 +351,8 @@ gst_dmss_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
 
   src = GST_DMSS_SRC (psrc);
 
+  GST_LOG_OBJECT (src, "Going to read data from stream");
+  
   current_time = gst_clock_get_time (src->system_clock);
 
   if (!GST_CLOCK_TIME_IS_VALID (src->last_ack_time) ||
@@ -358,6 +363,11 @@ gst_dmss_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
       goto control_socket_error;
     GST_LOG_OBJECT (src, "Sent nope packet for keep-alive");
     src->last_ack_time = current_time;
+
+#if 1
+    GST_LOG_OBJECT (src, "Download rate of %d Bps", src->bytes_downloaded);
+    src->bytes_downloaded = 0;
+#endif
   }
 
   GST_INFO_OBJECT (src, " ");
@@ -385,6 +395,9 @@ gst_dmss_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
       "Received prologue packet with command %.02x. body size %d",
       (unsigned int) (unsigned char) prologue[0], (int) body_size);
 
+#if 1
+  src->bytes_downloaded += sizeof (prologue) + body_size;
+#endif
   *outbuf = gst_buffer_new_and_alloc (sizeof (prologue) + body_size);
   gst_buffer_map (*outbuf, &map, GST_MAP_READWRITE);
 

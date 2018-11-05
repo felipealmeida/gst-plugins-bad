@@ -78,6 +78,9 @@ struct _GstDmssSrc
   GArray *queued_buffer;
   GstClock *system_clock;
   GstClockTime last_ack_time;
+#if 1
+  unsigned int bytes_downloaded;
+#endif
 };
 
 struct _GstDmssSrcClass
