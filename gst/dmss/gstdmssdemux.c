@@ -127,6 +127,9 @@ static void gst_dmss_demux_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_dmss_demux_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
+static void gst_dmss_demux_resync (GstDmssDemux *demux, guint16 frame_epoch, guint16 frame_ts, GstClockTime current_time,
+    GstClockTime send_base_time);
+
 
 static void
 gst_dmss_demux_class_init (GstDmssDemuxClass * klass)
@@ -142,8 +145,8 @@ gst_dmss_demux_class_init (GstDmssDemuxClass * klass)
   gobject_class->finalize = gst_dmss_demux_finalize;
 
   g_object_class_install_property (gobject_class, PROP_LATENCY,
-      g_param_spec_string ("latency", "Latency",
-          "Set latency in ms", DMSS_DEFAULT_LATENCY,
+      g_param_spec_uint ("latency", "Latency",
+          "Set latency in ms", 0, G_MAXUINT, DMSS_DEFAULT_LATENCY,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   
   gstelement_class->change_state =
@@ -385,9 +388,9 @@ gst_dmss_demux_flush (GstDmssDemux * demux)
   gchar const *prologue;
   guint32 minimum_dhav_size = dhav_fixed_header_size + dhav_epilogue_size;
   guint16 frame_epoch;
-  guint16 frame_ts, ring_diff_ts, reverse_ring_diff_ts;
-  int diff_ts;
-  GstClockTime absolute_timestamp;
+  guint16 frame_ts/*, ring_diff_ts*//*, reverse_ring_diff_ts*/;
+  //int diff_ts;
+  //GstClockTime absolute_timestamp;
   gboolean is_audio;
   gchar const *error_msg;
   int start_offset;
@@ -598,11 +601,11 @@ gst_dmss_demux_init (GstDmssDemux * demux)
   demux->latency = DMSS_DEFAULT_LATENCY;
   demux->pipeline_clock = NULL;
   demux->base_time = 0;
-  demux->need_resync = TRUE;
-  demux->samples = 0;
+  /* demux->need_resync = TRUE; */
+  /* demux->samples = 0; */
   /* demux->last_latency = 0; */
   /* demux->avg_latency = 0; */
-  demux->jitter = 0;
+  /* demux->jitter = 0; */
 
   gst_pad_set_query_function (demux->videosrcpad,
       GST_DEBUG_FUNCPTR (gst_dmss_demux_src_query));
@@ -632,6 +635,41 @@ static void
 gst_dmss_demux_finalize (GObject * object)
 {
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+static void
+gst_dmss_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstDmssDemux *demux = GST_DMSS_DEMUX (object);
+
+  switch (prop_id) {
+  case PROP_LATENCY:
+      demux->latency = g_value_get_uint (value);
+
+      gst_element_send_event (GST_ELEMENT (demux),
+            gst_event_new_latency (demux->latency * GST_MSECOND));
+      break;
+  default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}  
+
+static void
+gst_dmss_demux_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec)
+{
+  GstDmssDemux *demux = GST_DMSS_DEMUX (object);
+
+  switch (prop_id) {
+    case PROP_LATENCY:
+      g_value_set_uint (value, demux->latency);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
 }
 
 static GstStateChangeReturn
@@ -687,11 +725,11 @@ gst_dmss_demux_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
 
         GST_WARNING_OBJECT (demux, "Our latency: min %" GST_TIME_FORMAT
             ", max %" GST_TIME_FORMAT,
-            GST_TIME_ARGS (demux->latency*GST_MSECOND), GST_TIME_ARGS (demux->latency*GST_MSECOND));
+                            GST_TIME_ARGS (demux->latency*GST_MSECOND), GST_TIME_ARGS (demux->latency*GST_MSECOND));
 
-        min += demux->latency * DMSS_DEFAULT_LATENCY;
+        min += demux->latency * GST_MSECOND;
         if (max != GST_CLOCK_TIME_NONE)
-          max += demux->latency * DMSS_DEFAULT_LATENCY;
+          max += demux->latency * GST_MSECOND;
 
         GST_DEBUG_OBJECT (demux, "Calculated total latency : min %"
             GST_TIME_FORMAT " max %" GST_TIME_FORMAT,
@@ -1004,15 +1042,14 @@ void gst_dmss_demux_resync (GstDmssDemux *demux, guint16 frame_epoch, guint16 fr
   demux->base_time = current_time;
   demux->send_base_time = send_base_time;
   demux->last_ts = frame_ts;
-  /* demux->latency = DMSS_DEFAULT_LATENCY; */
 }
 
 GstClockTime gst_dmss_demux_calculate_pts (GstDmssDemux *demux, guint16 frame_epoch, guint16 frame_ts)
 {
   GstClockTime current_time;
   GstClockTime timestamp, send_base_time = demux->send_base_time;
-  GstClockTime diff_recv, diff_send, latency, delta_latency;
-  guint16 ring_diff_ts, reverse_ring_diff_ts, old_latency;
+  GstClockTime diff_recv, diff_send/*, latency*//*, delta_latency*/;
+  guint16 ring_diff_ts, reverse_ring_diff_ts/*, old_latency*/;
   int diff_ts;
   
   if (!demux->pipeline_clock)
@@ -1021,7 +1058,7 @@ GstClockTime gst_dmss_demux_calculate_pts (GstDmssDemux *demux, guint16 frame_ep
       abort();
     }
 
-resync:
+/* resync: */
   current_time = gst_clock_get_time(demux->pipeline_clock);
 
   if (demux->need_segment)
@@ -1029,13 +1066,13 @@ resync:
     demux->last_timestamp = send_base_time = gst_dmss_demux_segment_init (demux, frame_epoch, frame_ts);
     gst_dmss_demux_resync (demux, frame_epoch, frame_ts, current_time, send_base_time);
 
-    demux->need_resync = FALSE;
+    /* demux->need_resync = FALSE; */
   }
-  else if (demux->need_resync)
-  {
-    gst_dmss_demux_resync (demux, frame_epoch, frame_ts, current_time, send_base_time);
-    demux->need_resync = FALSE;
-  }
+  /* else if (demux->need_resync) */
+  /* { */
+  /*   gst_dmss_demux_resync (demux, frame_epoch, frame_ts, current_time, send_base_time); */
+  /*   demux->need_resync = FALSE; */
+  /* } */
     
   
   // ts are in milliseconds
@@ -1051,8 +1088,9 @@ resync:
     {
       GST_ERROR_OBJECT (demux, "Should resync last_ts %d frame_ts %d", (int)demux->last_ts, (int)frame_ts);
       send_base_time = demux->send_base_time;
-      demux->need_resync = TRUE;
-      goto resync;
+      /* demux->need_resync = TRUE; */
+      /* goto resync; */
+      diff_ts = 0;
     }
     
     timestamp = demux->last_timestamp;
@@ -1069,8 +1107,6 @@ resync:
              " diff_send: %" GST_TIME_FORMAT,
              GST_TIME_ARGS(diff_recv),
              GST_TIME_ARGS(diff_send));
-
-  /* old_latency = demux->avg_latency + demux->jitter; */
 
   // has latency (is it possible to not have latency?)
   // would it be going back in time?
@@ -1146,27 +1182,20 @@ resync:
   /*    , (current_time - demux->base_time > timestamp - demux->send_base_time) */
   /*    , (current_time - demux->base_time > timestamp - demux->send_base_time + demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY) */
   /*   );   */
+
+  /* timestamp += demux->latency*GST_MSECOND; */
   
-  /* GST_DEBUG */
-  /*   ("Current time in pipeline %" GST_TIME_FORMAT */
-  /*    " and timestamp from packet %" GST_TIME_FORMAT */
-  /*    " and avg latency %" GST_TIME_FORMAT */
-  /*    " and avg jitter %" GST_TIME_FORMAT */
-  /*    " samples %d" */
-  /*    " packet latency %" GST_TIME_FORMAT */
-  /*    " packet jitter %" GST_TIME_FORMAT */
-  /*    , GST_TIME_ARGS(current_time - demux->base_time) */
-  /*    , GST_TIME_ARGS(timestamp - demux->send_base_time) */
-  /*    , GST_TIME_ARGS(demux->avg_latency) */
-  /*    , GST_TIME_ARGS(demux->jitter) */
-  /*    , demux->samples */
-  /*    , GST_TIME_ARGS(latency) */
-  /*    , GST_TIME_ARGS(delta_latency) */
-  /*    ); */
+  GST_DEBUG
+    ("Current time in pipeline %" GST_TIME_FORMAT
+     " and timestamp from packet %" GST_TIME_FORMAT
+     " and latency %"GST_TIME_FORMAT
+     , GST_TIME_ARGS(current_time - demux->base_time)
+     , GST_TIME_ARGS(timestamp - demux->send_base_time)
+     , GST_TIME_ARGS(demux->latency*GST_MSECOND)
+     );
 
   demux->last_ts = frame_ts;
   demux->last_timestamp = timestamp;
-  //timestamp += demux->last_latency;
   
   return timestamp - demux->send_base_time;
   
