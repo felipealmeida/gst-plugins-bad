@@ -33,6 +33,9 @@
 GST_DEBUG_CATEGORY_STATIC (dmssdemux_debug);
 #define GST_CAT_DEFAULT dmssdemux_debug
 
+static const char DHAV_prefix[4] = {'D', 'H', 'A', 'V'};
+static const char DHAV_suffix[4] = {'d', 'h', 'a', 'v'};
+
 /*
 #define VIDEO_CAPS \
   GST_STATIC_CAPS (\
@@ -78,6 +81,12 @@ static GstStaticPadTemplate audio_template = GST_STATIC_PAD_TEMPLATE ("audio",
     GST_PAD_SOMETIMES,
     AUDIO_CAPS);
 
+enum
+{
+  PROP_0,
+  PROP_LATENCY
+};
+
 #define gst_dmss_demux_parent_class parent_class
 G_DEFINE_TYPE (GstDmssDemux, gst_dmss_demux, GST_TYPE_ELEMENT);
 
@@ -114,6 +123,11 @@ static GstStateChangeReturn gst_dmss_demux_change_state (GstElement * element,
 static GstClockTime gst_dmss_demux_calculate_pts (GstDmssDemux *demux,
     guint16 frame_epoch, guint16 frame_ts);
 
+static void gst_dmss_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec);
+static void gst_dmss_demux_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec);
+
 static void
 gst_dmss_demux_class_init (GstDmssDemuxClass * klass)
 {
@@ -123,8 +137,15 @@ gst_dmss_demux_class_init (GstDmssDemuxClass * klass)
   gobject_class = G_OBJECT_CLASS (klass);
   gstelement_class = GST_ELEMENT_CLASS (klass);
 
+  gobject_class->set_property = gst_dmss_demux_set_property;
+  gobject_class->get_property = gst_dmss_demux_get_property;
   gobject_class->finalize = gst_dmss_demux_finalize;
 
+  g_object_class_install_property (gobject_class, PROP_LATENCY,
+      g_param_spec_string ("latency", "Latency",
+          "Set latency in ms", DMSS_DEFAULT_LATENCY,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_dmss_demux_change_state);
   gstelement_class->send_event = GST_DEBUG_FUNCPTR (gst_dmss_demux_send_event);
@@ -382,10 +403,10 @@ gst_dmss_demux_flush (GstDmssDemux * demux)
 
     start_offset = 0;
 
-    while ((prologue[prologue_size + start_offset + 0] != 'D' ||
-            prologue[prologue_size + start_offset + 1] != 'H' ||
-            prologue[prologue_size + start_offset + 2] != 'A' ||
-            prologue[prologue_size + start_offset + 3] != 'V') &&
+    while ((prologue[prologue_size + start_offset + 0] != DHAV_prefix[0] ||
+            prologue[prologue_size + start_offset + 1] != DHAV_prefix[1] ||
+            prologue[prologue_size + start_offset + 2] != DHAV_prefix[2] ||
+            prologue[prologue_size + start_offset + 3] != DHAV_prefix[3]) &&
         size != prologue_size + minimum_dhav_size + start_offset) {
       GST_LOG_OBJECT (demux, "searching prefix");
       ++start_offset;
@@ -451,10 +472,10 @@ gst_dmss_demux_flush (GstDmssDemux * demux)
 
       gst_buffer_map (buffer, &map, GST_MAP_READ);
 
-      if (map.data[prologue_size + dhav_packet_size - 8] != 'd' ||
-          map.data[prologue_size + dhav_packet_size - 7] != 'h' ||
-          map.data[prologue_size + dhav_packet_size - 6] != 'a' ||
-          map.data[prologue_size + dhav_packet_size - 5] != 'v') {
+      if (map.data[prologue_size + dhav_packet_size - 8] != DHAV_suffix[0] ||
+          map.data[prologue_size + dhav_packet_size - 7] != DHAV_suffix[1] ||
+          map.data[prologue_size + dhav_packet_size - 6] != DHAV_suffix[2] ||
+          map.data[prologue_size + dhav_packet_size - 5] != DHAV_suffix[3]) {
         error_msg = "Packet doesn't end with dhav suffix";
         goto corrupted_error;
       }
@@ -574,13 +595,13 @@ gst_dmss_demux_init (GstDmssDemux * demux)
   demux->need_segment = TRUE;
   demux->audio_format = GST_DMSS_AUDIO_FORMAT_UNKNOWN;
   demux->video_format = GST_DMSS_VIDEO_FORMAT_UNKNOWN;
-  //demux->latency = DMSS_DEFAULT_LATENCY;
+  demux->latency = DMSS_DEFAULT_LATENCY;
   demux->pipeline_clock = NULL;
   demux->base_time = 0;
   demux->need_resync = TRUE;
   demux->samples = 0;
-  demux->last_latency = 0;
-  demux->avg_latency = 0;
+  /* demux->last_latency = 0; */
+  /* demux->avg_latency = 0; */
   demux->jitter = 0;
 
   gst_pad_set_query_function (demux->videosrcpad,
@@ -666,11 +687,11 @@ gst_dmss_demux_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
 
         GST_WARNING_OBJECT (demux, "Our latency: min %" GST_TIME_FORMAT
             ", max %" GST_TIME_FORMAT,
-            GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY), GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
+            GST_TIME_ARGS (demux->latency*GST_MSECOND), GST_TIME_ARGS (demux->latency*GST_MSECOND));
 
-        min += demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY;
+        min += demux->latency * DMSS_DEFAULT_LATENCY;
         if (max != GST_CLOCK_TIME_NONE)
-          max += demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY;
+          max += demux->latency * DMSS_DEFAULT_LATENCY;
 
         GST_DEBUG_OBJECT (demux, "Calculated total latency : min %"
             GST_TIME_FORMAT " max %" GST_TIME_FORMAT,
@@ -878,10 +899,10 @@ gst_dmss_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       if (body_size < minimum_dhav_packet_size)
         goto discard_mapped_buffer;
 
-      if (map.data[prologue_size + 0] == 'D' &&
-          map.data[prologue_size + 1] == 'H' &&
-          map.data[prologue_size + 2] == 'A' &&
-          map.data[prologue_size + 3] == 'V') {
+      if (map.data[prologue_size + 0] == DHAV_prefix[0] &&
+          map.data[prologue_size + 1] == DHAV_prefix[1] &&
+          map.data[prologue_size + 2] == DHAV_prefix[2] &&
+          map.data[prologue_size + 3] == DHAV_prefix[3]) {
         dhav_packet_type = map.data[prologue_size + 4];
 
         dhav_packet_size = GST_READ_UINT32_LE (&map.data[prologue_size + 12]);
@@ -942,33 +963,33 @@ gst_dmss_demux_handle_src_event (GstPad * pad, GstObject * parent,
   GstDmssDemux *demux = GST_DMSS_DEMUX (parent);
 
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_QOS:
-    {
-      GstQOSType type;
-      gdouble proportion;
-      GstClockTimeDiff diff;
-      GstClockTime timestamp;
+    /* case GST_EVENT_QOS: */
+    /* { */
+    /*   GstQOSType type; */
+    /*   gdouble proportion; */
+    /*   GstClockTimeDiff diff; */
+    /*   GstClockTime timestamp; */
 
-      gst_event_parse_qos (event, &type, &proportion, &diff, &timestamp);
+    /*   gst_event_parse_qos (event, &type, &proportion, &diff, &timestamp); */
 
-      GST_WARNING ("QoS type: %d timestamp %" GST_TIME_FORMAT " diff %"
-          GST_TIME_FORMAT, (int) type, GST_TIME_ARGS (timestamp),
-          GST_TIME_ARGS (diff));
+    /*   GST_WARNING ("QoS type: %d timestamp %" GST_TIME_FORMAT " diff %" */
+    /*       GST_TIME_FORMAT, (int) type, GST_TIME_ARGS (timestamp), */
+    /*       GST_TIME_ARGS (diff)); */
 
-      if (type == GST_QOS_TYPE_UNDERFLOW) {
-        GST_WARNING ("New latency: %" GST_TIME_FORMAT,
-            GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-        res =
-            gst_element_send_event (GST_ELEMENT (demux),
-            gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-        res =
-            gst_pad_push_event (demux->sinkpad,
-            gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-      } else {
-        res = gst_pad_push_event (demux->sinkpad, event);
-      }
-      break;
-    }
+    /*   if (type == GST_QOS_TYPE_UNDERFLOW) { */
+    /*     GST_WARNING ("New latency: %" GST_TIME_FORMAT, */
+    /*         GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+    /*     res = */
+    /*         gst_element_send_event (GST_ELEMENT (demux), */
+    /*         gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+    /*     res = */
+    /*         gst_pad_push_event (demux->sinkpad, */
+    /*         gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+    /*   } else { */
+    /*     res = gst_pad_push_event (demux->sinkpad, event); */
+    /*   } */
+    /*   break; */
+    /* } */
     default:
       res = gst_pad_push_event (demux->sinkpad, event);
       break;
@@ -983,7 +1004,7 @@ void gst_dmss_demux_resync (GstDmssDemux *demux, guint16 frame_epoch, guint16 fr
   demux->base_time = current_time;
   demux->send_base_time = send_base_time;
   demux->last_ts = frame_ts;
-  demux->latency = DMSS_DEFAULT_LATENCY;
+  /* demux->latency = DMSS_DEFAULT_LATENCY; */
 }
 
 GstClockTime gst_dmss_demux_calculate_pts (GstDmssDemux *demux, guint16 frame_epoch, guint16 frame_ts)
@@ -1049,48 +1070,48 @@ resync:
              GST_TIME_ARGS(diff_recv),
              GST_TIME_ARGS(diff_send));
 
-  old_latency = demux->avg_latency + demux->jitter;
+  /* old_latency = demux->avg_latency + demux->jitter; */
 
   // has latency (is it possible to not have latency?)
   // would it be going back in time?
   //g_assert (diff_recv >= diff_send);
   //if (diff_recv >= diff_send)
-  {
-    latency = diff_recv >= diff_send ? (diff_recv - diff_send) : 0;
-    delta_latency = abs (demux->last_latency - latency);
+  /* { */
+  /*   latency = diff_recv >= diff_send ? (diff_recv - diff_send) : 0; */
+  /*   delta_latency = abs (demux->last_latency - latency); */
 
-    demux->latency_window[demux->window_pos] = latency;
-    demux->latency_window[demux->window_pos] = delta_latency; // not using
+  /*   demux->latency_window[demux->window_pos] = latency; */
+  /*   demux->latency_window[demux->window_pos] = delta_latency; // not using */
 
-    /*if (!demux->samples) {
-    }
-    else if (demux->samples < DMSS_MAXIMUM_SAMPLES_AVERAGE)*/ {
-      //
+  /*   /\*if (!demux->samples) { */
+  /*   } */
+  /*   else if (demux->samples < DMSS_MAXIMUM_SAMPLES_AVERAGE)*\/ { */
+  /*     // */
       
-    /* } else { */
-      // fully sampled
+  /*   /\* } else { *\/ */
+  /*     // fully sampled */
 
-      demux->jitter = ((demux->jitter * (demux->samples ? demux->samples-1 :0)) + delta_latency)/(demux->samples?demux->samples : 1);
-      demux->avg_latency = ((demux->avg_latency * demux->samples) + latency)/(demux->samples+1);
+  /*     demux->jitter = ((demux->jitter * (demux->samples ? demux->samples-1 :0)) + delta_latency)/(demux->samples?demux->samples : 1); */
+  /*     demux->avg_latency = ((demux->avg_latency * demux->samples) + latency)/(demux->samples+1); */
 
-      if (demux->samples != DMSS_MAXIMUM_SAMPLES_AVERAGE)
-        demux->samples++;
-    }
+  /*     if (demux->samples != DMSS_MAXIMUM_SAMPLES_AVERAGE) */
+  /*       demux->samples++; */
+  /*   } */
 
-    demux->last_latency = latency;
-  }
+  /*   demux->last_latency = latency; */
+  /* } */
 
   
-  if(old_latency < demux->avg_latency + demux->jitter) {
-      GST_WARNING ("New latency: %" GST_TIME_FORMAT,
-           GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-      /* res = */
-           gst_element_send_event (GST_ELEMENT (demux),
-           gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-      /* res = */
-           gst_pad_push_event (demux->sinkpad,
-           gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY));
-  }
+  /* if(old_latency < demux->avg_latency + demux->jitter) { */
+  /*     GST_WARNING ("New latency: %" GST_TIME_FORMAT, */
+  /*          GST_TIME_ARGS (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+  /*     /\* res = *\/ */
+  /*          gst_element_send_event (GST_ELEMENT (demux), */
+  /*          gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+  /*     /\* res = *\/ */
+  /*          gst_pad_push_event (demux->sinkpad, */
+  /*          gst_event_new_latency (demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)); */
+  /* } */
   
   /* if (diff_recv > diff_send */
   /*     && (diff_recv - diff_send) > demux->latency) */
@@ -1120,28 +1141,28 @@ resync:
 
   //current_time = gst_segment_position_from_running_time (&demux->time_segment, GST_FORMAT_TIME, current_time - demux->base_time);
 
-  GST_DEBUG
-    ("Is this packet late? %d and is this packet late considering avg latency? %d"
-     , (current_time - demux->base_time > timestamp - demux->send_base_time)
-     , (current_time - demux->base_time > timestamp - demux->send_base_time + demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY)
-    );  
+  /* GST_DEBUG */
+  /*   ("Is this packet late? %d and is this packet late considering avg latency? %d" */
+  /*    , (current_time - demux->base_time > timestamp - demux->send_base_time) */
+  /*    , (current_time - demux->base_time > timestamp - demux->send_base_time + demux->avg_latency + demux->jitter + DMSS_DEFAULT_LATENCY) */
+  /*   );   */
   
-  GST_DEBUG
-    ("Current time in pipeline %" GST_TIME_FORMAT
-     " and timestamp from packet %" GST_TIME_FORMAT
-     " and avg latency %" GST_TIME_FORMAT
-     " and avg jitter %" GST_TIME_FORMAT
-     " samples %d"
-     " packet latency %" GST_TIME_FORMAT
-     " packet jitter %" GST_TIME_FORMAT
-     , GST_TIME_ARGS(current_time - demux->base_time)
-     , GST_TIME_ARGS(timestamp - demux->send_base_time)
-     , GST_TIME_ARGS(demux->avg_latency)
-     , GST_TIME_ARGS(demux->jitter)
-     , demux->samples
-     , GST_TIME_ARGS(latency)
-     , GST_TIME_ARGS(delta_latency)
-     );
+  /* GST_DEBUG */
+  /*   ("Current time in pipeline %" GST_TIME_FORMAT */
+  /*    " and timestamp from packet %" GST_TIME_FORMAT */
+  /*    " and avg latency %" GST_TIME_FORMAT */
+  /*    " and avg jitter %" GST_TIME_FORMAT */
+  /*    " samples %d" */
+  /*    " packet latency %" GST_TIME_FORMAT */
+  /*    " packet jitter %" GST_TIME_FORMAT */
+  /*    , GST_TIME_ARGS(current_time - demux->base_time) */
+  /*    , GST_TIME_ARGS(timestamp - demux->send_base_time) */
+  /*    , GST_TIME_ARGS(demux->avg_latency) */
+  /*    , GST_TIME_ARGS(demux->jitter) */
+  /*    , demux->samples */
+  /*    , GST_TIME_ARGS(latency) */
+  /*    , GST_TIME_ARGS(delta_latency) */
+  /*    ); */
 
   demux->last_ts = frame_ts;
   demux->last_timestamp = timestamp;
