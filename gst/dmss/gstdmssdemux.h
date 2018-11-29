@@ -98,17 +98,17 @@ struct _GstDmssDemux
   GstClock* pipeline_clock;
   GstClockTime send_base_time;
   GstClockTime base_time;
-  gboolean need_resync;
+  // gboolean need_resync;
 
-  int samples;
-  GstClockTime last_latency;
-  GstClockTime avg_latency;
-  GstClockTime jitter;
-  //GstClockTime min_delta;
-  int window_pos;
-  GstClockTime latency_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
-  GstClockTime delta_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
-  GstClockTime sorted_offsets_delta_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
+  // int samples;
+  // GstClockTime last_latency;
+  // GstClockTime avg_latency;
+  // GstClockTime jitter;
+  // //GstClockTime min_delta;
+  // int window_pos;
+  // GstClockTime latency_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
+  // GstClockTime delta_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
+  // GstClockTime sorted_offsets_delta_window[DMSS_MAXIMUM_SAMPLES_AVERAGE];
 };
 
 struct _GstDmssDemuxClass
