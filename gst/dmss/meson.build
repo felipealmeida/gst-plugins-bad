@@ -1,7 +1,8 @@
 gstdmss_sources = [
   'plugin.c',
   'gstdmsssrc.c',
-  'gstdmssdemux.c'
+  'gstdmssdemux.c',
+  'gstdmssprotocol.c'
 ]
 
 gstdmss = library('gstdmss',
