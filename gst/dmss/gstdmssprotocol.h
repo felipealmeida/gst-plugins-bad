@@ -1,6 +1,6 @@
 /* GStreamer
- * Copyright (C) <2018> Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
- *     Author: Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
+ * Copyright (C) <2018-2019> Felipe Magno de Almeida <felipe@expertise.dev>
+ *     Author: Felipe Magno de Almeida <felipe@expertise.dev>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,5 +32,12 @@ gssize gst_dmss_protocol_receive_packet_no_body (GSocket * socket,
 int gst_dmss_protocol_receive_packet (GSocket * socket,
     GCancellable * cancellable, GError ** err, gchar * ext_buffer,
     gssize * ext_size);
+gssize gst_dmss_receive_packet_no_body (GSocket * socket, GCancellable * cancellable,
+    GError ** err, gchar * buffer);
+int gst_dmss_receive_packet (GSocket * socket,
+    GCancellable * cancellable, GError ** err, gchar * ext_buffer,
+    gssize * ext_size);
+int gst_dmss_receive_packet_ignore (GSocket * socket,
+    GCancellable* cancellable, GError ** err);
 
 #endif

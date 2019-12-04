@@ -1,6 +1,6 @@
 /* GStreamer
- * Copyright (C) <2018> Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
- *     Author: Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
+ * Copyright (C) <2018-2019> Felipe Magno de Almeida <felipe@expertise.dev>
+ *     Author: Felipe Magno de Almeida <felipe@expertise.dev>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -178,4 +178,98 @@ gst_dmss_protocol_receive_packet (GSocket * socket, GCancellable * cancellable,
   return (*ext_size = 32 + body_size);
 recv_error:
   return -1;
+}
+
+gssize
+gst_dmss_receive_packet_no_body (GSocket * socket, GCancellable * cancellable,
+    GError ** err, gchar * buffer)
+{
+  gssize size;
+  gssize offset;
+  gssize body_size;
+  static int const buffer_size = 32;
+
+  g_assert (err != NULL);
+  offset = 0;
+  do {
+    if ((size = g_socket_receive (socket, &buffer[offset],
+                buffer_size - offset, cancellable, err)) <= 0) {
+      if (!*err && !size)
+        g_set_error_literal (err, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+            "Read operation timed out");
+      goto recv_error;
+    }
+
+    offset += size;
+  }
+  while (offset != buffer_size);
+
+  body_size = GUINT32_FROM_LE (*(guint32 *) & buffer[4]);
+  return body_size;             // body size
+recv_error:
+  return -1;
+}
+
+int
+gst_dmss_receive_packet (GSocket * socket, GCancellable * cancellable,
+    GError ** err, gchar * ext_buffer, gssize * ext_size)
+{
+  gssize size, body_size;
+  gssize offset;
+  gchar buffer[32];
+
+  offset = 0;
+  do {
+    if ((size = g_socket_receive (socket, &buffer[offset],
+                sizeof (buffer) - offset, cancellable, err)) <= 0) {
+      if (!*err && !size)
+        g_set_error_literal (err, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+            "Read operation timed out");
+      goto recv_error;
+    }
+
+    if (offset < *ext_size)
+      memcpy (&ext_buffer[offset], &buffer[offset],
+          *ext_size - offset < size ? *ext_size - offset : size);
+
+    offset += size;
+  }
+  while (offset != 32);
+
+  body_size = GUINT32_FROM_LE (*(guint32 *) & buffer[4]);
+
+  offset = 0;
+  while (offset != body_size) {
+    if ((size = g_socket_receive (socket, &buffer[offset % sizeof (buffer)],
+                (body_size - offset) >
+                sizeof (buffer) -
+                (offset %
+                    sizeof (buffer)) ? sizeof (buffer) -
+                (offset % sizeof (buffer)) : (body_size -
+                    offset), cancellable, err)) <= 0) {
+      if (!*err && !size)
+        g_set_error_literal (err, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+            "Read operation timed out");
+      goto recv_error;
+    }
+
+    if (offset + 32 < *ext_size)
+      memcpy (&ext_buffer[offset + 32], &buffer[offset + 32],
+          *ext_size - (offset + 32) < size ? *ext_size - (offset + 32) : size);
+
+    offset += size;
+  }
+
+  return 32 + body_size;
+recv_error:
+  return -1;
+}
+
+int
+gst_dmss_receive_packet_ignore (GSocket * socket, GCancellable * cancellable,
+    GError ** err)
+{
+  gchar buffer[32];
+  gssize size = 32;
+  return gst_dmss_receive_packet (socket, cancellable, err, buffer, &size);
 }

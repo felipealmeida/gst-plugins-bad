@@ -56,13 +56,13 @@ Ukey:
  */
 
 /**
- * SECTION:element-dmsssrc
- * @title: dmsssrc
+ * SECTION:element-dmssplaybacksrc
+ * @title: dmssplaybacksrc
  * @see_also: #dmssmuxer
  *
  * ## Example launch line (client):
  * |[
- * gst-launch-1.0 dmsssrc port=37777 host=192.168.1.108 username=admin password=admin ! 
+ * gst-launch-1.0 dmssplaybacksrc port=37777 host=192.168.1.108 username=admin password=admin ! 
  * ]|
  *
  */
@@ -72,14 +72,14 @@ Ukey:
 #endif
 
 #include <gst/gst-i18n-plugin.h>
-#include "gstdmsssrc.h"
+#include "gstdmssplaybacksrc.h"
 #include "gstdmssprotocol.h"
 #include "gstdmss.h"
 
 #include <stdio.h>
 
-GST_DEBUG_CATEGORY (dmsssrc_debug);
-#define GST_CAT_DEFAULT dmsssrc_debug
+GST_DEBUG_CATEGORY (dmssplaybacksrc_debug);
+#define GST_CAT_DEFAULT dmssplaybacksrc_debug
 
 #define DMSS_DEFAULT_TIMEOUT            0
 
@@ -97,26 +97,28 @@ enum
   PROP_PASSWORD,
   PROP_TIMEOUT,
   PROP_CHANNEL,
-  PROP_SUBCHANNEL
+  PROP_SUBCHANNEL,
+  PROP_STARTTIME,
+  PROP_STOPTIME
 };
 
-#define gst_dmss_src_parent_class parent_class
-G_DEFINE_TYPE (GstDmssSrc, gst_dmss_src, GST_TYPE_PUSH_SRC);
+#define gst_dmss_playback_src_parent_class parent_class
+G_DEFINE_TYPE (GstDmssPlaybackSrc, gst_dmss_playback_src, GST_TYPE_PUSH_SRC);
 
-static void gst_dmss_src_finalize (GObject * gobject);
+static void gst_dmss_playback_src_finalize (GObject * gobject);
 
-static GstFlowReturn gst_dmss_src_create (GstPushSrc * psrc,
+static GstFlowReturn gst_dmss_playback_src_create (GstPushSrc * psrc,
     GstBuffer ** outbuf);
-static gboolean gst_dmss_src_stop (GstBaseSrc * bsrc);
-static gboolean gst_dmss_src_start (GstBaseSrc * bsrc);
+static gboolean gst_dmss_playback_src_stop (GstBaseSrc * bsrc);
+static gboolean gst_dmss_playback_src_start (GstBaseSrc * bsrc);
 
-static void gst_dmss_src_set_property (GObject * object, guint prop_id,
+static void gst_dmss_playback_src_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
-static void gst_dmss_src_get_property (GObject * object, guint prop_id,
+static void gst_dmss_playback_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
 static void
-gst_dmss_src_class_init (GstDmssSrcClass * klass)
+gst_dmss_playback_src_class_init (GstDmssPlaybackSrcClass * klass)
 {
   GObjectClass *gobject_class;
   GstElementClass *gstelement_class;
@@ -128,9 +130,9 @@ gst_dmss_src_class_init (GstDmssSrcClass * klass)
   gstbasesrc_class = (GstBaseSrcClass *) klass;
   gstpushsrc_class = (GstPushSrcClass *) klass;
 
-  gobject_class->set_property = gst_dmss_src_set_property;
-  gobject_class->get_property = gst_dmss_src_get_property;
-  gobject_class->finalize = gst_dmss_src_finalize;
+  gobject_class->set_property = gst_dmss_playback_src_set_property;
+  gobject_class->get_property = gst_dmss_playback_src_get_property;
+  gobject_class->finalize = gst_dmss_playback_src_finalize;
 
   g_object_class_install_property (gobject_class, PROP_HOST,
       g_param_spec_string ("host", "Host",
@@ -169,19 +171,29 @@ gst_dmss_src_class_init (GstDmssSrcClass * klass)
           G_MAXUINT, DMSS_DEFAULT_SUBCHANNEL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_STARTTIME,
+      g_param_spec_string ("start_time", "Start Date and Time",
+          "Start date and time to get from source", DMSS_DEFAULT_STARTTIME
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_STOPTIME,
+      g_param_spec_string ("stop_time", "Stop Date and Time",
+          "Stop date and time to get from source", DMSS_DEFAULT_STOPTIME
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  
   gst_element_class_add_static_pad_template (gstelement_class, &srctemplate);
 
   gst_element_class_set_metadata (gstelement_class,
-      "DMSS client source",
-      "Source for IP Camera",
-      "Receive data from IP camera",
+      "DMSS playback client source",
+      "Playback Source for IP Camera",
+      "Receive data for recorded video from IP camera",
       "Felipe Magno de Almeida <felipe@expertise.dev>");
 
-  gstbasesrc_class->start = gst_dmss_src_start;
-  gstbasesrc_class->stop = gst_dmss_src_stop;
-  gstpushsrc_class->create = gst_dmss_src_create;
+  gstbasesrc_class->start = gst_dmss_playback_src_start;
+  gstbasesrc_class->stop = gst_dmss_playback_src_stop;
+  gstpushsrc_class->create = gst_dmss_playback_src_create;
 
-  GST_DEBUG_CATEGORY_INIT (dmsssrc_debug, "dmsssrc", 0, "DMSS Client Source");
+  GST_DEBUG_CATEGORY_INIT (dmssplaybacksrc_debug, "dmssplaybacksrc", 0, "DMSS Client Source");
 }
 
 /* initialize the new element
@@ -190,7 +202,7 @@ gst_dmss_src_class_init (GstDmssSrcClass * klass)
  * initialize instance structure
  */
 static void
-gst_dmss_src_init (GstDmssSrc * src)
+gst_dmss_playback_src_init (GstDmssPlaybackSrc * src)
 {
   src->port = DMSS_DEFAULT_PORT;
   src->host = g_strdup (DMSS_DEFAULT_HOST);
@@ -209,14 +221,14 @@ gst_dmss_src_init (GstDmssSrc * src)
   src->system_clock = gst_system_clock_obtain ();
   src->last_ack_time = GST_CLOCK_TIME_NONE;
 
-  GST_OBJECT_FLAG_UNSET (src, GST_DMSS_SRC_CONTROL_OPEN);
+  GST_OBJECT_FLAG_UNSET (src, GST_DMSS_PLAYBACK_SRC_CONTROL_OPEN);
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 }
 
 static void
-gst_dmss_src_finalize (GObject * gobject)
+gst_dmss_playback_src_finalize (GObject * gobject)
 {
-  GstDmssSrc *this = GST_DMSS_SRC (gobject);
+  GstDmssPlaybackSrc *this = GST_DMSS_SRC (gobject);
 
   if (this->cancellable)
     g_object_unref (this->cancellable);
@@ -238,10 +250,10 @@ gst_dmss_src_finalize (GObject * gobject)
 }
 
 static void
-gst_dmss_src_set_property (GObject * object, guint prop_id,
+gst_dmss_playback_src_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstDmssSrc *src = GST_DMSS_SRC (object);
+  GstDmssPlaybackSrc *src = GST_DMSS_SRC (object);
 
   switch (prop_id) {
     case PROP_HOST:
@@ -280,6 +292,11 @@ gst_dmss_src_set_property (GObject * object, guint prop_id,
     case PROP_SUBCHANNEL:
       src->subchannel = g_value_get_uint (value);
       break;
+  case PROP_STARTTIME:
+    
+      break;
+  case PROP_STOPTIME:
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -287,10 +304,10 @@ gst_dmss_src_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_dmss_src_get_property (GObject * object, guint prop_id,
+gst_dmss_playback_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstDmssSrc *src = GST_DMSS_SRC (object);
+  GstDmssPlaybackSrc *src = GST_DMSS_SRC (object);
 
   switch (prop_id) {
     case PROP_HOST:
@@ -315,9 +332,9 @@ gst_dmss_src_get_property (GObject * object, guint prop_id,
 }
 
 static gboolean
-gst_dmss_src_stop (GstBaseSrc * bsrc)
+gst_dmss_playback_src_stop (GstBaseSrc * bsrc)
 {
-  GstDmssSrc *this = GST_DMSS_SRC (bsrc);
+  GstDmssPlaybackSrc *this = GST_DMSS_SRC (bsrc);
   GError *error;
 
   if (this->control_socket) {
@@ -335,9 +352,9 @@ gst_dmss_src_stop (GstBaseSrc * bsrc)
 }
 
 static GstFlowReturn
-gst_dmss_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
+gst_dmss_playback_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
 {
-  GstDmssSrc *src;
+  GstDmssPlaybackSrc *src;
   GstFlowReturn ret = GST_FLOW_OK;
   GError *err = NULL;
   gssize body_size, size, offset;
@@ -372,7 +389,7 @@ gst_dmss_src_create (GstPushSrc * psrc, GstBuffer ** outbuf)
 
   GST_INFO_OBJECT (src, " ");
 
-  if (!GST_OBJECT_FLAG_IS_SET (src, GST_DMSS_SRC_CONTROL_OPEN))
+  if (!GST_OBJECT_FLAG_IS_SET (src, GST_DMSS_PLAYBACK_SRC_CONTROL_OPEN))
     goto wrong_state;
 
   GST_LOG_OBJECT (src, "Receiving data from socket with blocking");
@@ -473,7 +490,7 @@ wrong_state:
 }
 
 static int
-gst_dmss_src_new_protocol_find_value_size (gchar * buffer, int buffer_size,
+gst_dmss_playback_src_new_protocol_find_value_size (gchar * buffer, int buffer_size,
     GError ** err)
 {
   int offset = 0;
@@ -484,7 +501,7 @@ gst_dmss_src_new_protocol_find_value_size (gchar * buffer, int buffer_size,
 }
 
 static gchar *
-gst_dmss_src_new_protocol_find_prefix (GstDmssSrc * src, gchar * buffer,
+gst_dmss_playback_src_new_protocol_find_prefix (GstDmssPlaybackSrc * src, gchar * buffer,
     int buffer_size, gchar * prefix, int prefix_size, GError ** err)
 {
   int offset = 0;
@@ -509,7 +526,7 @@ error:
 }
 
 static int
-gst_dmss_src_new_protocol_link_subchannel (GstDmssSrc * src, GError ** err)
+gst_dmss_playback_src_new_protocol_link_subchannel (GstDmssPlaybackSrc * src, GError ** err)
 {
   gchar ack_subchannel_template[] =
       "TransactionID:2\r\n"
@@ -570,7 +587,7 @@ error:
 }
 
 static int
-gst_dmss_src_add_object (GstDmssSrc * src, GError ** err)
+gst_dmss_playback_src_add_object (GstDmssPlaybackSrc * src, GError ** err)
 {
   gchar cmd_buffer[]
       =
@@ -635,7 +652,7 @@ gst_dmss_src_add_object (GstDmssSrc * src, GError ** err)
   offset = 0;
   // search for line with error status
   status_buffer =
-      gst_dmss_src_new_protocol_find_prefix (src, extension_recv, buffer_size,
+      gst_dmss_playback_src_new_protocol_find_prefix (src, extension_recv, buffer_size,
       error_status, sizeof (error_status) - 1, err);
 
   GST_DEBUG_OBJECT (src, "Found prefix at %s", status_buffer);
@@ -652,7 +669,7 @@ gst_dmss_src_add_object (GstDmssSrc * src, GError ** err)
 
   // search for line with connectionId
   connection_id_buffer =
-      gst_dmss_src_new_protocol_find_prefix (src, extension_recv, buffer_size,
+      gst_dmss_playback_src_new_protocol_find_prefix (src, extension_recv, buffer_size,
       connection_id_prefix, sizeof (connection_id_prefix) - 1, err);
 
   GST_DEBUG_OBJECT (src, "Found prefix at %s", connection_id_buffer);
@@ -661,7 +678,7 @@ gst_dmss_src_add_object (GstDmssSrc * src, GError ** err)
     goto error_status;
 
   connection_id_value_size =
-      gst_dmss_src_new_protocol_find_value_size (connection_id_buffer,
+      gst_dmss_playback_src_new_protocol_find_value_size (connection_id_buffer,
       buffer_size - (connection_id_buffer - extension_recv), err);
 
   memcpy (src->connection_id, connection_id_buffer,
@@ -677,9 +694,9 @@ error_status:
 }
 
 static gboolean
-gst_dmss_src_start (GstBaseSrc * bsrc)
+gst_dmss_playback_src_start (GstBaseSrc * bsrc)
 {
-  GstDmssSrc *src = GST_DMSS_SRC (bsrc);
+  GstDmssPlaybackSrc *src = GST_DMSS_SRC (bsrc);
   GError *err = NULL;
   GInetAddress *addr;
   GSocketAddress *saddr;
@@ -829,9 +846,9 @@ gst_dmss_src_start (GstBaseSrc * bsrc)
   g_socket_set_timeout (src->stream_socket, src->timeout);
 
   GST_DEBUG_OBJECT (src, "opened receiving stream socket");
-  GST_OBJECT_FLAG_SET (src, GST_DMSS_SRC_CONTROL_OPEN);
+  GST_OBJECT_FLAG_SET (src, GST_DMSS_PLAYBACK_SRC_CONTROL_OPEN);
 
-  if ((size = gst_dmss_src_add_object (src, &err)) < 0)
+  if ((size = gst_dmss_playback_src_add_object (src, &err)) < 0)
     goto login_error;
 
   GST_DEBUG_OBJECT (src, "Added object");
@@ -844,7 +861,7 @@ gst_dmss_src_start (GstBaseSrc * bsrc)
 
   /* memcpy (&stream_link_buffer[8], login_symbol, sizeof (login_symbol)); */
 
-  if (gst_dmss_src_new_protocol_link_subchannel (src, &err) < 0)
+  if (gst_dmss_playback_src_new_protocol_link_subchannel (src, &err) < 0)
     goto stream_auth_failed;
 
   GST_DEBUG_OBJECT (src,
@@ -931,28 +948,28 @@ stream_connect_failed:
   {
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Connection with stream socket failed: %s", err->message));
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 stream_auth_failed:
   {
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Authentication in stream socket failed"));
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 authentication_error:
   {
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Authentication failed, verify your username and password"));
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 login_error:
   {
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Failed to send data on control socket: %s", err->message));
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 no_socket:
@@ -960,7 +977,7 @@ no_socket:
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Failed to create socket: %s", err->message));
     g_object_unref (saddr);
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 name_resolve:
@@ -972,7 +989,7 @@ name_resolve:
           ("Failed to resolve host '%s': %s", src->host, err->message));
     }
     g_object_unref (resolver);
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 connect_failed:
@@ -985,7 +1002,8 @@ connect_failed:
               err->message));
     }
     g_object_unref (saddr);
-    gst_dmss_src_stop (GST_BASE_SRC (src));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
 }
+

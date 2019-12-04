@@ -1,6 +1,6 @@
 /* GStreamer
- * Copyright (C) <2018-2019> Felipe Magno de Almeida <felipe@expertise.dev>
- *     Author: Felipe Magno de Almeida <felipe@expertise.dev>
+ * Copyright (C) <2018-2019> Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
+ *     Author: Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -18,8 +18,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_DMSS_SRC_H__
-#define __GST_DMSS_SRC_H__
+#ifndef __GST_DMSS_PLAYBACK_SRC_H__
+#define __GST_DMSS_PLAYBACK_SRC_H__
 
 #include <gst/gst.h>
 #include <gst/base/gstpushsrc.h>
@@ -28,29 +28,27 @@
 
 G_BEGIN_DECLS
 
-void gst_dmss_debug_print_prologue (gchar * prologue);
-
 #define GST_TYPE_DMSS_SRC                       \
-  (gst_dmss_src_get_type())
+  (gst_dmss_playback_src_get_type())
 #define GST_DMSS_SRC(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_DMSS_SRC,GstDmssSrc))
-#define GST_DMSS_SRC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_DMSS_SRC,GstDmssSrcClass))
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_DMSS_SRC,GstDmssPlaybackSrc))
+#define GST_DMSS_PLAYBACK_SRC_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_DMSS_SRC,GstDmssPlaybackSrcClass))
 #define GST_IS_DMSS_SRC(obj) \
   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_DMSS_SRC))
 #define GST_IS_DMSS_SRC_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_DMSS_SRC))
-typedef struct _GstDmssSrc GstDmssSrc;
-typedef struct _GstDmssSrcClass GstDmssSrcClass;
+typedef struct _GstDmssPlaybackSrc GstDmssPlaybackSrc;
+typedef struct _GstDmssPlaybackSrcClass GstDmssPlaybackSrcClass;
 
 typedef enum
 {
-  GST_DMSS_SRC_CONTROL_OPEN = (GST_BASE_SRC_FLAG_LAST << 0),
+  GST_DMSS_PLAYBACK_SRC_CONTROL_OPEN = (GST_BASE_SRC_FLAG_LAST << 0),
 
-  GST_DMSS_SRC_FLAG_LAST = (GST_BASE_SRC_FLAG_LAST << 2)
-} GstDmssSrcFlags;
+  GST_DMSS_PLAYBACK_SRC_FLAG_LAST = (GST_BASE_SRC_FLAG_LAST << 2)
+} GstDmssPlaybackSrcFlags;
 
-struct _GstDmssSrc
+struct _GstDmssPlaybackSrc
 {
   GstPushSrc element;
 
@@ -77,12 +75,12 @@ struct _GstDmssSrc
 #endif
 };
 
-struct _GstDmssSrcClass
+struct _GstDmssPlaybackSrcClass
 {
   GstPushSrcClass parent_class;
 };
 
-GType gst_dmss_src_get_type (void);
+GType gst_dmss_playback_src_get_type (void);
 
 G_END_DECLS
-#endif /* __GST_DMSS_SRC_H__ */
+#endif /* __GST_DMSS_PLAYBACK_SRC_H__ */

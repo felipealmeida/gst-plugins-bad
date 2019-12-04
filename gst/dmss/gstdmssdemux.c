@@ -1,6 +1,6 @@
 /* GStreamer
- * Copyright (C) <2018> Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
- *     Author: Felipe Magno de Almeida <felipe@expertisesolutions.com.br>
+ * Copyright (C) <2018-2019> Felipe Magno de Almeida <felipe@expertise.dev>
+ *     Author: Felipe Magno de Almeida <felipe@expertise.dev>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -156,7 +156,7 @@ gst_dmss_demux_class_init (GstDmssDemuxClass * klass)
       "DMSS demuxer",
       "Demuxer for IP Camera",
       "Receive data from IP camera",
-      "Felipe Magno de Almeida <felipe@expertisesolutions.com.br>");
+      "Felipe Magno de Almeida <felipe@expertise.dev>");
 
   GST_DEBUG_CATEGORY_INIT (dmssdemux_debug, "dmssdemux", 0, "DMSS Demux");
 }

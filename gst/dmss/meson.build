@@ -1,6 +1,7 @@
 gstdmss_sources = [
   'plugin.c',
   'gstdmsssrc.c',
+  'gstdmssplaybacksrc.c',
   'gstdmssdemux.c',
   'gstdmssprotocol.c'
 ]
