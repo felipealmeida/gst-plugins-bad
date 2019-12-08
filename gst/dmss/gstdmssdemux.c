@@ -208,15 +208,13 @@ gst_dmss_demux_find_extended_header_value (guint8 prefix,
       if (pv == prefix) {
         v = extended_header[i] & 0xFFFFFF;
         break;
-      } else if (!pv)
-        break;
+      }
     } else {
       guint8 pv = (extended_header[i] & 0xFF00000000000000) >> 56;
       if (pv == prefix) {
         v = extended_header[i] & 0xFFFFFFFFFFFFFF;
         break;
-      } else if (!pv)
-        break;
+      }
     }
   }
 
@@ -480,6 +478,7 @@ gst_dmss_demux_flush (GstDmssDemux * demux)
       GST_INFO ("DHAV frame timing info epoch: %d timestamp: %d",
           (int) frame_epoch, (int) frame_ts);
 
+      memset (extended_header, 0, sizeof(extended_header));
       gst_dmss_demux_parse_extended_header (demux,
           (gchar *) map.data +
           prologue_size +
