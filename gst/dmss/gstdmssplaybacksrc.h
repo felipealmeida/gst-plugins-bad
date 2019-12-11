@@ -66,6 +66,7 @@ struct _GstDmssPlaybackSrc
   GSocket *control_socket;
   GSocket *stream_socket;
   GCancellable *cancellable;
+  GDateTime *starttime, *stoptime;
 
   GArray *queued_buffer;
   GstClock *system_clock;

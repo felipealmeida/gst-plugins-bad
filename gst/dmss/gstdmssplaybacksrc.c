@@ -117,6 +117,24 @@ static void gst_dmss_playback_src_set_property (GObject * object, guint prop_id,
 static void gst_dmss_playback_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
+static GDateTime*
+gst_dmss_playback_src_get_default_starttime (void)
+{
+  GDateTime* now = g_date_time_new_now_local ();
+  GDateTime* n = g_date_time_add_hours (now, DMSS_DEFAULT_STARTTIME_HOURS);
+  g_date_time_unref (now);
+  return n;
+}
+
+static GDateTime*
+gst_dmss_playback_src_get_default_stoptime (void)
+{
+  GDateTime* now = g_date_time_new_now_local ();
+  GDateTime* n = g_date_time_add_hours (now, DMSS_DEFAULT_STOPTIME_HOURS);
+  g_date_time_unref (now);
+  return n;
+}
+
 static void
 gst_dmss_playback_src_class_init (GstDmssPlaybackSrcClass * klass)
 {
@@ -173,12 +191,12 @@ gst_dmss_playback_src_class_init (GstDmssPlaybackSrcClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_STARTTIME,
       g_param_spec_string ("start_time", "Start Date and Time",
-          "Start date and time to get from source", DMSS_DEFAULT_STARTTIME
+          "Start date and time to get from source", DMSS_DEFAULT_STARTTIME,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_STOPTIME,
       g_param_spec_string ("stop_time", "Stop Date and Time",
-          "Stop date and time to get from source", DMSS_DEFAULT_STOPTIME
+          "Stop date and time to get from source", DMSS_DEFAULT_STOPTIME,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   
   gst_element_class_add_static_pad_template (gstelement_class, &srctemplate);
@@ -254,6 +272,7 @@ gst_dmss_playback_src_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstDmssPlaybackSrc *src = GST_DMSS_SRC (object);
+  const char* time;
 
   switch (prop_id) {
     case PROP_HOST:
@@ -293,9 +312,18 @@ gst_dmss_playback_src_set_property (GObject * object, guint prop_id,
       src->subchannel = g_value_get_uint (value);
       break;
   case PROP_STARTTIME:
-    
+      time = g_value_get_string (value);
+      if (!strcmp (time, ""))
+        src->starttime = gst_dmss_playback_src_get_default_starttime ();
+      else
+        src->starttime = g_date_time_new_from_iso8601 (time, NULL);
       break;
   case PROP_STOPTIME:
+      time = g_value_get_string (value);
+      if (!strcmp (time, ""))
+        src->stoptime = gst_dmss_playback_src_get_default_stoptime ();
+      else
+        src->stoptime = g_date_time_new_from_iso8601 (time, NULL);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -694,6 +722,14 @@ error_status:
 }
 
 static gboolean
+gst_dmss_playback_src_create_media_find_file (GstDmssPlaybackSrc *src, GError** err)
+{
+  
+
+  return 0;
+}
+
+static gboolean
 gst_dmss_playback_src_start (GstBaseSrc * bsrc)
 {
   GstDmssPlaybackSrc *src = GST_DMSS_SRC (bsrc);
@@ -720,7 +756,7 @@ gst_dmss_playback_src_start (GstBaseSrc * bsrc)
   gchar const stream_start_template[] =
       "TransactionID:100\r\n"
       "Method:GetParameterNames\r\n"
-      "ParameterName:Dahua.Device.Network.Monitor.General\r\n"
+      "ParameterName:Dahua.Device.Network.PlayBack.General\r\n"
       "channel:%d\r\n"
       "state:1\r\n" "ConnectionID:%s\r\n" "stream:%d\r\n" "\r\n";
   gchar *new_command_buffer;
@@ -864,6 +900,9 @@ gst_dmss_playback_src_start (GstBaseSrc * bsrc)
   if (gst_dmss_playback_src_new_protocol_link_subchannel (src, &err) < 0)
     goto stream_auth_failed;
 
+  if (! gst_dmss_playback_src_create_media_find_file (src, &err))
+    goto media_find_error;
+  
   GST_DEBUG_OBJECT (src,
       "linked stream socket. Going to start stream for channel %d and subchannel %d",
       src->channel, src->subchannel);
@@ -962,6 +1001,13 @@ authentication_error:
   {
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("Authentication failed, verify your username and password"));
+    gst_dmss_playback_src_stop (GST_BASE_SRC (src));
+    return FALSE;
+  }
+media_find_error:
+  {
+    GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
+        ("Failed finding data on Camera: %s", err->message));
     gst_dmss_playback_src_stop (GST_BASE_SRC (src));
     return FALSE;
   }
